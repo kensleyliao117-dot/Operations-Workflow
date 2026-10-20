@@ -12,6 +12,7 @@ from memory.schemas import (
     MemoryUpdate, MetricsRead, PublicationRead, SyncRead, FeedbackRead, FeedbackPublicationRead,
 )
 from memory.services import publications, metrics, feedback
+from memory.services import deletion
 from memory.services.common import get_owned, memory_transaction, owned
 from memory import retriever
 from models.memory_sync import MemorySyncEvent
@@ -29,7 +30,22 @@ RecordId = Annotated[int, Path(gt=0)]
 
 @router.post("/publish-records/{record_id}/memory/sync", response_model=PublicationRead)
 def sync(record_id: RecordId, db: Database, memory_db: MemoryDatabase):
-    return publications.sync_publication(db, memory_db, record_id)
+    return publications.sync_publication(db, memory_db, record_id, restore_deleted=True)
+
+
+@router.delete('/publish-records/{record_id}/memory', status_code=204)
+def delete_publication_feedback(record_id: RecordId, db: Database, memory_db: MemoryDatabase):
+    deletion.delete_publication_feedback(db, memory_db, record_id)
+
+
+@router.delete('/publish-records/{record_id}/memory/metrics/{metric_id}', status_code=204)
+def delete_metric(record_id: RecordId, metric_id: Annotated[int, Path(gt=0)], db: Database, memory_db: MemoryDatabase):
+    deletion.delete_metric(db, memory_db, record_id, metric_id)
+
+
+@router.delete('/memory/experiences/{memory_id}', status_code=204)
+def delete_experience(memory_id: Annotated[int, Path(gt=0)], db: Database, memory_db: MemoryDatabase):
+    deletion.delete_experience(db, memory_db, memory_id)
 
 
 @router.get("/publish-records/{record_id}/memory/sync-status", response_model=SyncRead)

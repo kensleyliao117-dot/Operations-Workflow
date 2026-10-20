@@ -100,7 +100,17 @@ onUnmounted(() => {
         </RouterLink>
       </div>
     </section>
-    <MemoryPanel :key="selected.id" :record="selected" :product-id="selected.product_id" />
+    <MemoryPanel
+      :key="selected.id"
+      :record="selected"
+      :product-id="selected.product_id"
+      @deleted="
+        async () => {
+          await router.replace('/feedback')
+          await reload()
+        }
+      "
+    />
   </template>
   <section v-else-if="route.query.record_id && !loading" class="panel empty-page section-gap">
     <h2>未找到该已发布作品</h2>

@@ -137,6 +137,10 @@ export const api = {
     result: (id, data) => post(`/publish-records/${id}/result`, data),
   },
   memory: {
+    remove: (id) => request(`/publish-records/${id}/memory`, { method: 'DELETE' }),
+    removeMetric: (id, metric) =>
+      request(`/publish-records/${id}/memory/metrics/${metric}`, { method: 'DELETE' }),
+    removeExperience: (id) => request(`/memory/experiences/${id}`, { method: 'DELETE' }),
     publications: (values) => get('/memory/publications', values),
     feedback: (id) => get(`/memory/feedback/${id}`),
     syncStatus: (id) => get(`/publish-records/${id}/memory/sync-status`),

@@ -63,6 +63,11 @@ class WorkflowPostgresTest(unittest.TestCase):
             self.assertEqual(finished.status, "approved")
             self.assertEqual(finished.next_nodes, [])
             model.assert_called_once()
+            # 彻底删除任务时同时移除 PostgreSQL 中的完整 thread。
+            thread_config = workflow._config(workflow._run(self.db, task_id))
+            task.delete_task(self.db, task_id)
+            with persistence.open_checkpointer(task_id) as saver:
+                self.assertIsNone(saver.get_tuple(thread_config))
 
 
 def tearDownModule():

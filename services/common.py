@@ -33,7 +33,7 @@ def owned_query(db, model):
                  "platform_accounts", "publish_metrics", "rednote_analysis_feedback", "content_rule_checks", "memory_sync_events", "user_analysis_models", "user_resource_models"}:
         return statement.where(model.user_id == user_id)
     if table in {"contents", "reviews", "publish_records"}:
-        return statement.where(model.task_id.in_(select(Task.id).where(Task.user_id == user_id)))
+        return statement.where(model.task_id.in_(select(Task.id).where(Task.user_id == user_id, Task.is_deleted.is_(False))))
     if table == "product_documents":
         return statement.where(model.product_id.in_(select(Product.id).where(Product.user_id == user_id)))
     if table == "rednote_analysis":

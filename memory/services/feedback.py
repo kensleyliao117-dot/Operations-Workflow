@@ -51,6 +51,10 @@ def analyze(db, memory_db, record_id, data):
         raise ConflictError("分析期间发布版本关联已变化，未保存经验")
     with memory_transaction(memory_db):
         post = get_owned(db, memory_db, PublishedPost, post_id, lock=True)
+        remaining = list(memory_db.scalars(owned(db, memory_db, PostMetrics).where(
+            PostMetrics.post_id == post_id, PostMetrics.id.in_(data.metrics_ids))))
+        if len(remaining) != len(data.metrics_ids):
+            raise ConflictError('分析期间所选指标已删除，未保存经验，请重新选择证据')
         previous = memory_db.scalar(owned(db, memory_db, Feedback).where(
             Feedback.post_id == post_id, Feedback.source_fingerprint == source_fingerprint))
         if previous is not None:

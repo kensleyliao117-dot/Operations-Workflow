@@ -23,7 +23,7 @@ class Task(Base):
     task_type:Mapped[str]=mapped_column(String(100))
     input_text:Mapped[str]=mapped_column(Text)
     status:Mapped[str]=mapped_column(String(100))
-    # 仅从任务入口隐藏，关联内容、审核和发布数据保留。
+    # 兼容旧版移除记录，并标记待重试的彻底删除流程。
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # checkpoint 只保存可 JSON 序列化的进度，例如 content_id、当前步骤。
     checkpoint: Mapped[dict | None] = mapped_column(JSON, nullable=True)

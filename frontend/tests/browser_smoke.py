@@ -49,6 +49,7 @@ class ContractAPI:
         self.check_status = 'no_risk_detected'
         self.case_deleted = False
         self.workflow_stage_override = None
+        self.failed_rule_stage = False
         self.workflow_content_id = 41 if ready else None
         self.task = {"id": 31, "user_id": 101, "product_id": 11, "platform_name": "rednote", "task_type": "generate", "input_text": "通勤场景介绍", "status": "pending_review" if ready else "pending", "checkpoint": None, "failed_from_status": None, "error_message": None, "created_at": NOW, "updated_at": NOW}
         self.created = ready
@@ -60,6 +61,7 @@ class ContractAPI:
         self.experiences = []
         self.metric_keys = {}
         self.feedback_cache = {}
+        self.feedback_deleted = False
         self.feedback_evidence = {}
         self.analysis = {"id": 81, "cases_id": 71, "version": 1, "model": "test-model", "result": {"summary": "先从通勤场景切入，避免照搬产品事实", "hook": "场景切入", "reusable_patterns": ["场景后接需求"]}, "content": "分析示例", "created_at": NOW}
         self.analyses = [self.analysis]
@@ -78,6 +80,11 @@ class ContractAPI:
 
     def workflow(self):
         c = next((c for c in self.contents if c['id'] == self.workflow_content_id), None)
+        if self.failed_rule_stage:
+            return {"task_id": 31, "run_id": "test-run", "task_status": self.task['status'],
+                    "status": "failed", "stage": "platform_rules", "content_id": c['id'],
+                    "content_version": c['version'], "rule_check": None, "next_nodes": ["platform_rules"],
+                    "interrupt": None, "error_message": "任务或内容已变化，请刷新状态", "notices": []}
         state = "approved" if self.task["status"] in {"approved", "publishing", "completed"} else 'waiting_changes' if self.task['status'] == 'rejected' else self.workflow_stage_override or "waiting_review"
         return {"task_id": 31, "run_id": "test-run", "task_status": self.task["status"], "status": state, "stage": state, "content_id": c["id"] if c else None, "content_version": c["version"] if c else None, "rule_check": self.check(c["id"]) if c else None, "next_nodes": ["human_review"] if state != "approved" else [], "interrupt": {}, "error_message": None, "notices": []}
 
@@ -158,6 +165,7 @@ class ContractAPI:
                 self.task.update(data); self.created = True; status, result = 201, self.task
             elif path == "/tasks/31" and method == 'DELETE':
                 self.created = False
+                self.contents = []; self.reviews = []; self.records = []; self.metrics = []; self.experiences = []
                 status, result = 204, None
             elif path == "/tasks/31": result = self.task
             elif path == "/tasks/31/workflow" and not self.started: status, result = 404, {"detail": "尚未启动工作流"}
@@ -171,6 +179,12 @@ class ContractAPI:
                     self.contents.insert(0, value)
                 self.workflow_content_id = self.contents[0]['id']; self.task["status"] = "pending_review"; status, result = 201, self.workflow()
                 self.contents[0]["generation_metadata"].update(prompt_id=data.get("prompt_id"), analysis_references=[{"analysis_id": id} for id in data.get("analysis_ids", [])])
+            elif path == '/tasks/31/workflow/retry':
+                assert self.failed_rule_stage
+                self.failed_rule_stage = False
+                self.workflow_content_id = self.contents[0]['id']
+                self.task['status'] = 'pending_review'
+                result = self.workflow()
             elif path == "/tasks/31/workflow/resume":
                 WorkflowResumeRequest.model_validate(data)
                 if data['action'] == 'submit_changes':
@@ -233,9 +247,25 @@ class ContractAPI:
             elif path == "/publish-records/51/result":
                 PublishResult.model_validate(data); self.records[0].update(publish_status="published", delivery_phase="finished", platform_post_id="1" * 24, platform_post_url=data["platform_post_url"], error_message=None, published_at="2026-10-15T12:00:00Z", publication_details={'final_content': data.get('final_content'), 'external_materials_note': data.get('external_materials_note')}); self.task["status"] = "completed"; result = self.records[0]
             elif path == '/memory/publications':
-                result = [{**r, 'product_id': 11, 'product_name': '演示耳机', 'title': self.contents[0]['title']} for r in self.records if r['publish_status'] == 'published' and r['platform'] == params.get('platform', [r['platform']])[0]]
-            elif path.endswith("/memory/sync-status"): result = {"status": "synced", "publish_record_id": 51, "attempts": 1, "error_message": None}
-            elif path.endswith("/memory/publication"): result = {"id": 1, "publish_record_id": 51, "published_at": self.records[0]['published_at']}
+                result = [] if self.feedback_deleted else [{**r, 'product_id': 11, 'product_name': '演示耳机', 'title': self.contents[0]['title']} for r in self.records if r['publish_status'] == 'published' and r['platform'] == params.get('platform', [r['platform']])[0]]
+            elif path == '/publish-records/51/memory' and method == 'DELETE':
+                self.feedback_deleted = True
+                self.metrics = []; self.experiences = []; self.feedback_evidence = {}; self.feedback_cache = {}
+                status, result = 204, None
+            elif path.endswith('/memory/sync') and method == 'POST':
+                self.feedback_deleted = False
+                result = {'id': 1, 'publish_record_id': 51, 'published_at': self.records[0]['published_at']}
+            elif path.endswith("/memory/sync-status"): result = {"status": "deleted" if self.feedback_deleted else "synced", "publish_record_id": 51, "attempts": 1, "error_message": None}
+            elif path.endswith("/memory/publication"):
+                if self.feedback_deleted: status, result = 404, {'detail': '反馈已删除'}
+                else: result = {"id": 1, "publish_record_id": 51, "published_at": self.records[0]['published_at']}
+            elif re.fullmatch(r'/publish-records/51/memory/metrics/\d+', path) and method == 'DELETE':
+                metric_id = int(path.rsplit('/', 1)[-1])
+                self.metrics = [m for m in self.metrics if m['id'] != metric_id]
+                removed = [e['id'] for e in self.experiences if any(m['id'] == metric_id for m in self.feedback_evidence[e['feedback_id']]['evidence_snapshot']['metrics_snapshots'])]
+                self.experiences = [e for e in self.experiences if e['id'] not in removed]
+                self.feedback_cache = {}
+                status, result = 204, None
             elif path.endswith('/memory/metrics') and method == 'POST':
                 ManualMetricsRequest.model_validate(data)
                 key = data['idempotency_key']
@@ -265,6 +295,10 @@ class ContractAPI:
                     self.feedback_evidence[version] = {'model': 'fixture', 'created_at': NOW, 'evidence_snapshot': {'metrics_snapshots': deepcopy([m for m in self.metrics if m['id'] in data['metrics_ids']])}}
                 status, result = 201, self.feedback_cache[key]
             elif re.fullmatch(r'/memory/feedback/\d+', path): result = self.feedback_evidence[int(path.rsplit('/', 1)[-1])]
+            elif re.fullmatch(r'/memory/experiences/\d+', path) and method == 'DELETE':
+                self.experiences = [e for e in self.experiences if e['id'] != int(path.rsplit('/', 1)[-1])]
+                self.feedback_cache = {}
+                status, result = 204, None
             elif re.fullmatch(r'/memory/experiences/\d+', path) and method == 'PATCH':
                 result = next(e for e in self.experiences if e['id'] == int(path.rsplit('/', 1)[-1])); result.update(data)
             else: raise AssertionError(f"Undefined test API: {method} {path}")
@@ -504,6 +538,41 @@ class FrontendBrowserTest(unittest.TestCase):
         p.set_viewport_size({'width': 390, 'height': 844})
         expect(p.locator('.app-body')).to_have_css('margin-left', '0px')
         self.assertLessEqual(p.evaluate('document.documentElement.scrollWidth'), 390)
+
+    def test_feedback_deletion_supports_confirmation_observations_experiences_and_whole_post(self):
+        self.fixture = ContractAPI(ready=True)
+        self.fixture.task['status'] = 'completed'
+        self.fixture.records = [{'id': 51, 'task_id': 31, 'content_id': 41, 'content_version': 1, 'account_id': 61, 'platform': 'rednote', 'publish_status': 'published', 'visibility': 'public', 'published_at': '2026-10-15T12:00:00Z', 'platform_post_id': '1' * 24, 'platform_post_url': 'https://www.xiaohongshu.com/explore/' + '1' * 24}]
+        self.page.unroute(API + '/**'); self.page.route(API + '/**', self.fixture.handle)
+        p = self.page; self.login('/feedback')
+        p.get_by_role('button', name=re.compile('通勤耳机资料示例')).click()
+        for count in (1, 2):
+            p.get_by_role('button', name='采集当前真实指标', exact=True).click()
+            expect(p.locator('.snapshot-card')).to_have_count(count)
+        def analyze():
+            p.get_by_role('button', name='AI 分析并积累经验', exact=True).click()
+            p.get_by_role('dialog').get_by_role('button', name='确认分析', exact=True).click()
+            expect(p.get_by_role('button', name='删除此经验', exact=True)).to_be_visible()
+        analyze()
+        p.get_by_role('button', name='删除观测 #1', exact=True).click()
+        dialog = p.get_by_role('dialog', name='确认删除反馈数据')
+        dialog.get_by_role('button', name='取消', exact=True).click()
+        self.assertEqual(len(self.calls('DELETE', '/publish-records/51/memory/metrics/1')), 0)
+        p.get_by_role('button', name='删除观测 #1', exact=True).click()
+        dialog.get_by_role('button', name='确认删除反馈', exact=True).click()
+        expect(p.locator('.snapshot-card')).to_have_count(1)
+        expect(p.get_by_role('button', name='删除此经验', exact=True)).to_have_count(0)
+        analyze()
+        p.get_by_role('button', name='删除此经验', exact=True).click()
+        dialog.get_by_role('button', name='确认删除反馈', exact=True).click()
+        expect(p.get_by_role('button', name='删除此经验', exact=True)).to_have_count(0)
+        expect(p.locator('.snapshot-card')).to_have_count(1)
+        p.get_by_role('button', name='删除全部反馈', exact=True).click()
+        dialog.get_by_role('button', name='确认删除反馈', exact=True).click()
+        expect(p.get_by_role('heading', name='暂无已发布作品', exact=True)).to_be_visible()
+        self.assertEqual(len(self.fixture.records), 1)
+        p.reload()
+        expect(p.get_by_role('heading', name='暂无已发布作品', exact=True)).to_be_visible()
 
     def test_platform_switch_isolates_configuration_and_blocks_unimplemented_workflow(self):
         p = self.page; self.login('/generate')
@@ -792,6 +861,29 @@ class FrontendBrowserTest(unittest.TestCase):
         p.screenshot(path=str(ARTIFACTS / "feedback.png"), full_page=True, animations='disabled')
         self.assertEqual(self.fixture.prompts[0]["prompt_content"], "先写通勤场景，不编造体验。")
         self.assertEqual(len(self.calls("POST", "/publish-records/51/execute")), 1)
+
+    def test_saved_images_can_recover_stale_rule_stage_and_be_reviewed_without_regeneration(self):
+        self.fixture = ContractAPI(ready=True)
+        self.fixture.task['status'] = 'running'
+        self.fixture.failed_rule_stage = True
+        latest = {**deepcopy(self.fixture.contents[0]), 'id': 43, 'version': 3,
+                  'image_assets': [{'storage_key': 'generated_images/test.png', 'prompt': 'Saved image'}]}
+        self.fixture.contents.insert(0, latest)
+        self.page.unroute(API + '/**')
+        self.page.route(API + '/**', self.fixture.handle)
+        p = self.page; self.login('/review?task_id=31')
+        expect(p.get_by_role('button', name='通过审核', exact=True)).to_be_disabled()
+        p.get_by_role('button', name='恢复审核流程', exact=True).click()
+        expect(p.get_by_role('button', name='通过审核', exact=True)).to_be_enabled()
+        self.assertEqual(len(self.calls('POST', '/tasks/31/workflow/retry')), 1)
+        self.assertEqual(len(self.calls('POST', '/tasks/31/workflow/start')), 0)
+        self.assertFalse(any('/images/generate' in call[1] for call in self.fixture.calls))
+        p.get_by_role('button', name='通过审核', exact=True).click()
+        dialog = p.get_by_role('dialog', name='确认人工审核通过')
+        dialog.get_by_role('checkbox').check()
+        dialog.get_by_role('button', name='确认通过', exact=True).click()
+        expect(p.get_by_label('发布账号', exact=True)).to_be_visible()
+        self.assertEqual(self.calls('POST', '/reviews')[-1][2]['content_id'], 43)
 
     def test_unchanged_saved_version_can_submit_without_fabricating_a_new_version(self):
         self.fixture = ContractAPI(ready=True)

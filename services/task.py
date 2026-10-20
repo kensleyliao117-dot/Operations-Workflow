@@ -68,10 +68,11 @@ def list_tasks(
     platform_name: str | None = None,
     offset: int = 0,
     limit: int = 20,
+    include_deleted: bool = False,
 ) -> list[Task]:
     """按创建时间倒序分页，ID 用于保证同一时间下排序稳定。"""
     validate_pagination(offset, limit)
-    statement = owned_query(db, Task)
+    statement = select(Task).where(Task.user_id == current_user_id(db)) if include_deleted else owned_query(db, Task)
     if user_id is not None:
         validate_id(user_id)
         statement = statement.where(Task.user_id == user_id)
@@ -144,25 +145,9 @@ def _lock_task(db: Session, task_id: int) -> Task:
 
 
 def delete_task(db: Session, task_id: int) -> None:
-    """软删除所属任务；执行中的生成及发布必须先结束。"""
-    from models.publish_record import PublishRecord
-    from models.workflow import TaskWorkflow
-    from .image_generation import generation_in_progress
-
-    with write_transaction(db):
-        task = _lock_task(db, task_id)
-        workflow = db.get(TaskWorkflow, task_id)
-        publishing = db.scalar(select(PublishRecord.id).where(
-            PublishRecord.task_id == task_id,
-            PublishRecord.publish_status.in_(["publishing", "unknown"]),
-        ).limit(1))
-        if (task.status in {"running", "publishing"}
-                or (workflow is not None and workflow.status == "running")
-                or generation_in_progress(task)
-                or (task.checkpoint or {}).get("content_generation", {}).get("status") == "running"
-                or publishing is not None):
-            raise ConflictError("任务正在生成或发布，或发布结果待核实，请处理完成后再删除")
-        task.is_deleted = True
+    """彻底删除所属任务及其私有派生数据；失败后可重试。"""
+    from .deletion import delete_task_data
+    delete_task_data(db, task_id)
 
 
 def save_task_checkpoint(db: Session, task_id: int, data: TaskCheckpointSave) -> Task:

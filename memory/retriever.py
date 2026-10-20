@@ -7,7 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from pydantic import ValidationError
 
-from memory.models import OptimizationMemory
+from memory.models import OptimizationMemory, PublishedPost
+from models.publish_record import PublishRecord
+from models.task import Task
 from memory.schemas import MemoryReference
 from models.product import Product
 from services.common import current_user_id, get_record
@@ -42,6 +44,12 @@ def retrieve(db, memory_db, product_id, query, *, platform="rednote", limit=5, a
     if account_id is not None:
         statement = statement.where(OptimizationMemory.account_id == account_id)
     candidates = memory_db.scalars(statement.order_by(OptimizationMemory.id.desc()).limit(200)).all()
+    posts = dict(memory_db.execute(select(PublishedPost.id, PublishedPost.publish_record_id).where(
+        PublishedPost.user_id == user_id, PublishedPost.id.in_([row.post_id for row in candidates]))).all())
+    active_records = set(db.scalars(select(PublishRecord.id).join(Task, Task.id == PublishRecord.task_id).where(
+        PublishRecord.id.in_(list(posts.values())), PublishRecord.feedback_deleted.is_(False),
+        Task.user_id == user_id, Task.is_deleted.is_(False))))
+    candidates = [row for row in candidates if posts.get(row.post_id) in active_records]
     tokens = _tokens(query)
     ranked = []
     for item in candidates:

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, Text, DateTime, func, JSON, UniqueConstraint, Index, text
+from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, Text, DateTime, func, JSON, UniqueConstraint, Index, text, Boolean, false
 from sqlalchemy.orm import Mapped, mapped_column,relationship
 
 from database import Base
@@ -27,6 +27,7 @@ class PublishRecord(Base):
     # 历史记录允许为空，新发布必须显式选择实际平台账号。
     account_id: Mapped[int | None] = mapped_column(ForeignKey("platform_accounts.id"), nullable=True, index=True)
     publish_status:Mapped[str]=mapped_column(String(100))
+    feedback_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     publisher_backend: Mapped[str] = mapped_column(String(30), default="manual", server_default="manual")
     visibility: Mapped[str] = mapped_column(String(20), default="public", server_default="public")
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)

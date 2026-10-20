@@ -376,6 +376,28 @@ class ImageWorkflowTest(unittest.TestCase):
     generation_mocks = workflow_tests.WorkflowTest.generation_mocks
     start = workflow_tests.WorkflowTest.start
 
+    def test_images_recover_failed_rule_stage_for_latest_saved_version(self):
+        from workflows import nodes
+        with patch.object(nodes, 'platform_rules', side_effect=RuntimeError('rule stage interrupted')):
+            self.post(self.base + '/start', {}, 503)
+        first = self.client.get('/contents').json()[0]
+        edited = self.client.patch(f"/contents/{first['id']}", json={'body': '已保存修改'}).json()
+        with patch('config.GENERATED_IMAGE_DIR', Path(self.storage.name) / 'images'), \
+             patch('agents.image_prompt_agent.generate_prompt', return_value=ImagePromptDraft(prompt='Scene', negative_prompt='No text')), \
+             patch('services.image_generation.QwenImageClient') as mock:
+            client = mock.return_value.__enter__.return_value
+            client.generate.return_value = ImageResult('qwen-image-2.0', 'req', (URL,))
+            client.download.return_value = png()
+            result = self.post(f"/contents/{edited['id']}/images/generate", {})
+            client.generate.assert_called_once()
+        self.assertEqual(result['review_status'], 'waiting_review')
+        self.assertEqual(result['task_status'], 'pending_review')
+        state = self.client.get(self.base).json()
+        self.assertEqual(state['content_id'], result['content']['id'])
+        self.assertEqual(state['content_version'], 3)
+        self.assertEqual(state['interrupt']['content_version'], 3)
+        self.model.assert_called_once()
+
     def test_images_rejoin_graph_checks_and_interrupt_for_latest_version(self):
         saved = self.start()
         with patch("config.GENERATED_IMAGE_DIR", Path(self.storage.name) / "images"), \

@@ -67,21 +67,33 @@ def generate_images(state: ContentWorkflowState, runtime: Runtime[WorkflowContex
 def platform_rules(state: ContentWorkflowState, runtime: Runtime[WorkflowContext]):
     db = runtime.context.db
     warning, value = None, None
+    current = latest_content(db, state["task_id"])
+    if current is not None and current.id != state["content_id"]:
+        # 检查期间另存文案或配图后，不把旧版本检查结果用于最新版本。
+        return _saved_content_review(db, state,
+            "内容已更新，旧版本的规则检查不适用于当前版本；可手动重新检查，或直接人工审核。")
     try:
         check = rules_service.check_content(db, state["content_id"], force=state.get("decision") == "recheck")
         check = rules_service.apply_check_to_task(db, check.id)
         value = RuleCheckRead.model_validate(check).model_dump(mode="json")
     except ServiceError as exc:
         db.rollback()
-        with write_transaction(db):
-            task = get_record(db, Task, state["task_id"], lock=True)
-            content = latest_content(db, task.id)
-            if task.status not in {"running", "pending_review"} or content is None or content.id != state["content_id"]:
-                raise ConflictError("任务或内容已变化，请刷新状态") from None
-            rules_service.require_review_ready(db, task, content)
-            task.status = "pending_review"
-        warning = "规则检查未完成，仅作提示，请人工核对：" + str(exc)
+        return _saved_content_review(db, state, "规则检查未完成，仅作提示，请人工核对：" + str(exc))
     return {"rule_check": value, "rule_check_warning": warning, "stage": "waiting_review"}
+
+
+def _saved_content_review(db, state, warning):
+    """将当前已保存版本交由人工审核，不重放生成或沿用旧版风险结果。"""
+    with write_transaction(db):
+        task = get_record(db, Task, state["task_id"], lock=True)
+        content = latest_content(db, task.id)
+        if task.status not in {"running", "pending_review"} or content is None:
+            raise ConflictError("任务或内容已变化，请刷新状态")
+        rules_service.require_review_ready(db, task, content)
+        task.status = "pending_review"
+        return {"content_id": content.id, "content_version": content.version,
+                "rule_check": None, "rule_check_warning": warning,
+                "review_id": None, "stage": "waiting_review"}
 
 
 def latest_content(db, task_id):

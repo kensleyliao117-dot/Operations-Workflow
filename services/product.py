@@ -53,9 +53,21 @@ def delete_product(db, product_id):
     with write_transaction(db):
         product = get_record(db, Product, product_id, lock=True)
         if db.scalar(select(Task.id).where(Task.product_id == product_id).limit(1)) is not None:
-            raise ConflictError("产品已关联任务，不能删除")
+            raise ConflictError("请先彻底删除关联任务；已移除或删除未完成的任务可在任务历史中清理")
         if db.scalar(select(ProductDocument.id).where(ProductDocument.product_id == product_id).limit(1)) is not None:
             raise ConflictError("请先删除产品资料，再删除产品")
+        factory = db.info.get('memory_session_factory')
+        if factory is not None:
+            from memory.models import PublishedPost, OptimizationMemory
+            from sqlalchemy.exc import SQLAlchemyError
+            try:
+                with factory() as memory_db:
+                    for model in (PublishedPost, OptimizationMemory):
+                        if memory_db.scalar(select(model.id).where(model.product_id == product_id,
+                            model.user_id == current_user_id(db)).limit(1)) is not None:
+                            raise ConflictError('产品仍有数据反馈或运营经验，请先删除关联反馈')
+            except SQLAlchemyError:
+                raise ServiceUnavailableError('经验数据库暂不可用，暂时无法确认产品关联，请稍后重试') from None
         db.delete(product)
 
 

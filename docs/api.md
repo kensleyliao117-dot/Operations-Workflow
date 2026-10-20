@@ -8,7 +8,7 @@
 | 身份认证 | `/auth/register`、`/auth/login`、`/auth/logout` | 注册、登录、退出当前会话 |
 | 产品资料 | `/products`、`/products/{id}/documents` | 产品创建、查询、修改、删除，资料上传、下载、删除 |
 | 产品知识库 | `/products/{product_id}/rag` | 一键上传入库、重新入库、自然语言检索及来源引用 |
-| 任务 | `/tasks`、`/tasks/{id}`、`/tasks/{id}/generate` | 创建、查询、筛选、软删除、状态修改、进度保存、失败恢复、AI 生成并保存新版本 |
+| 任务 | `/tasks`、`/tasks/{id}`、`/tasks/{id}/generate` | 创建、查询、筛选、彻底删除关联数据、状态修改、进度保存、失败恢复、AI 生成并保存新版本 |
 | 工作流 | `/tasks/{id}/workflow`、`.../start`、`.../resume`、`.../retry` | LangGraph 生成保存、暂停等待人工审核、修改重审、故障恢复 |
 | 内容 | `/contents` | 创建、查询、历史列表、修改为新版本 |
 | AI 配图 | `/contents/{id}/images/generate`、`.../submit-review`、`.../{index}` | 生成并保存新版本、重试审核提交、JWT 认证读取图片；见 [配图说明](image_generation.md) |
@@ -29,7 +29,9 @@
 
 ## 审核到发布流程
 
-`DELETE /tasks/{id}` 需要 JWT，只能软删除所属任务。成功返回 204，任务从创作与审核列表隐藏，后续任务查询和执行接口返回 404；关联的内容版本、审核、发布记录及运营反馈仍保留。生成中、发布中或发布结果未知的任务返回 409，需等待执行完成或核实结果后再删除。前端入口为「内容生成 → 任务历史 → 删除」，需要二次确认。部署升级执行 `python -m alembic upgrade head`。
+`DELETE /tasks/{id}` 需要 JWT，只能彻底删除所属任务。成功返回 204，清理全部内容版本、生成图片、审核、风险检查、发布记录、指标、经验及工作流检查点，不操作平台真实帖子。产品资料和共用案例、Prompt、模型连接保留。生成中、发布中或发布结果未知时返回 409。删除中断时阻止继续执行，保留可重试记录；任务历史会读取 `include_deleted=true`，允许清理旧版已移除的任务。数据库或文件清理失败后可再次删除，产品在关联未清空前仍禁止删除。
+
+反馈支持 `DELETE /publish-records/{id}/memory`（整篇反馈与经验）、`DELETE /publish-records/{id}/memory/metrics/{metric_id}`（单次观测及其派生分析、经验）及 `DELETE /memory/experiences/{id}`（经验及对应分析）。整篇删除保留发布记录，并阻止自动同步重建；审核页可明确重新启用反馈，已删除数据不会恢复。产品在任务、资料、向量和经验关联清空后可删除。部署升级执行 `python -m alembic upgrade head`。
 
 1. 注册并登录，创建自己的产品，再提供 `product_id` 创建任务；归属由 JWT 身份确定。
 2. 调用 `POST /tasks/{id}/generate`（请求体可为 `{}`），AI 生成并保存 Content，任务自动进入 `pending_review`；也可手工创建内容，再切换 `running` 并提交待审核。

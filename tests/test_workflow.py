@@ -264,6 +264,50 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(result["content_version"], 1)
         self.model.assert_called_once()
 
+    def test_rule_stage_retry_uses_latest_saved_version_without_regeneration(self):
+        with patch.object(nodes, 'platform_rules', side_effect=RuntimeError('rule stage interrupted')):
+            self.post(self.base + '/start', {}, 503)
+        first = self.client.get('/contents').json()[0]
+        edited = self.client.patch(f"/contents/{first['id']}", json={'body': '已保存的新版本'}).json()
+        result = self.post(self.base + '/retry', None, 200)
+        self.assertEqual((result['task_status'], result['status']), ('pending_review', 'waiting_review'))
+        self.assertEqual(result['content_id'], edited['id'])
+        self.assertEqual(result['interrupt']['content_version'], edited['version'])
+        self.assertIsNone(result['rule_check'])
+        self.model.assert_called_once()
+        self.rule_agent.assert_not_called()
+        self.review(self.task['id'], first['id'], expected=409)
+        self.review(self.task['id'], edited['id'])
+        self.assertEqual(self.post(self.base + '/resume', {}, 200)['status'], 'approved')
+
+    def test_task_deletion_removes_checkpoint_and_content(self):
+        result = self.start()
+        with Session(self.engine) as db:
+            run = db.get(TaskWorkflow, self.task['id'])
+            from services.workflow import _config
+            checkpoint_config = _config(run)
+        self.assertIsNotNone(self.saver.get_tuple(checkpoint_config))
+        self.assertEqual(self.client.delete(f"/tasks/{self.task['id']}").status_code, 204)
+        self.assertIsNone(self.saver.get_tuple(checkpoint_config))
+        self.assertEqual(self.client.get(f"/contents/{result['content_id']}").status_code, 404)
+
+    def test_version_saved_during_rule_check_enters_review_without_old_risks(self):
+        edited = None
+        def change_during_check(*args, **kwargs):
+            nonlocal edited
+            first = self.client.get('/contents').json()[0]
+            response = self.client.patch(f"/contents/{first['id']}", json={'body': '检查期间保存的修改'})
+            self.assertEqual(response.status_code, 201)
+            edited = response.json()
+            return RuleAIDraft(risks=[])
+        self.rule_agent.side_effect = change_during_check
+        result = self.start()
+        self.assertEqual(result['content_id'], edited['id'])
+        self.assertEqual(result['task_status'], 'pending_review')
+        self.assertEqual(result['status'], 'waiting_review')
+        self.assertIsNone(result['rule_check'])
+        self.assertTrue(any('规则检查未完成' in text for text in result['notices']))
+
     def test_owner_and_preflight_checks_precede_any_generation(self):
         self.assertEqual(self.client.get(self.base).status_code, 404)
         self.post(self.base + "/start", {"analysis_ids": [999]}, 404)

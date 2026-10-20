@@ -84,6 +84,7 @@ const submissionAction = computed(() =>
 )
 const submissionLabel = computed(() => {
   if (dirty.value) return '保存并提交审核'
+  if (submissionAction.value === 'retry_review') return '提交已保存版本审核'
   if (submissionAction.value === 'submit_changes') return '提交已保存版本审核'
   if (submissionAction.value === 'submit_review') return '提交已保存版本审核'
   if (submissionAction.value === 'recheck' || submissionAction.value === 'check')
@@ -93,6 +94,19 @@ const submissionLabel = computed(() => {
 const approvable = computed(() =>
   canApprove(task.value, current.value, latest.value, check.value, dirty.value),
 )
+const reviewBlockedReason = computed(() => {
+  if (!current.value || approvable.value) return ''
+  if (current.value.id !== latest.value?.id) return '当前显示历史版本，请切换到最新版本后审核。'
+  if (dirty.value) return '有未保存的修改，请先保存并提交审核。'
+  if (submissionAction.value === 'retry_review')
+    return '素材已保存，审核流程尚未衔接；请点击“提交已保存版本审核”，无需重新生成。'
+  if (task.value?.status === 'running')
+    return '当前任务尚未进入待审核，请等待生成结束或先提交已保存版本审核。'
+  if (task.value?.status === 'cancelled') return '任务已取消，不能继续审核。'
+  if (['approved', 'publishing', 'completed'].includes(task.value?.status))
+    return '当前任务已通过审核或进入发布阶段。'
+  return '当前任务尚未提交审核，请先完成修改或处理工作流错误。'
+})
 const filtered = computed(() =>
   tasks.value.filter(
     (t) =>
@@ -248,7 +262,10 @@ async function submitChanges() {
         }
         throw new Error('任务或工作流状态已变化，请刷新后再提交')
       }
-      const result = await api.workflow.resume(taskId, nextAction)
+      const result =
+        nextAction === 'retry_review'
+          ? await api.workflow.retry(taskId)
+          : await api.workflow.resume(taskId, nextAction)
       if (result.task_status !== 'pending_review' || result.status !== 'waiting_review') {
         notify('内容已保存，请刷新查看实际工作流状态', 'info')
         return
@@ -370,8 +387,9 @@ watch(
     if (Number.isSafeInteger(Number(id)) && Number(id) > 0) selectTask(Number(id))
   },
 )
-watch(contents, (rows) => {
-  if (!current.value && rows[0]) setContent(rows[0])
+watch(contents, (rows, previous) => {
+  if (rows[0] && (!current.value || (!dirty.value && current.value.id === previous?.[0]?.id)))
+    setContent(rows[0])
 })
 onMounted(async () => {
   window.addEventListener('beforeunload', beforeUnload)
@@ -658,6 +676,15 @@ onUnmounted(() => {
         </p>
         <hr class="section-divider" />
         <h3>人工审核</h3>
+        <p v-if="reviewBlockedReason" class="muted section-gap">{{ reviewBlockedReason }}</p>
+        <button
+          v-if="submissionAction === 'retry_review'"
+          class="button section-gap"
+          :disabled="busy.has('submit-review') || busy.has('save-content')"
+          @click="action('submit-review', submitChanges)"
+        >
+          恢复审核流程
+        </button>
         <div class="row">
           <button
             class="button primary"

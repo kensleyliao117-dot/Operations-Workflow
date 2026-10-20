@@ -26,9 +26,11 @@ def list_tasks(
     platform_name: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    include_deleted: bool = False,
 ):
     return service.list_tasks(db, status=status,
-                              platform_name=platform_name, offset=offset, limit=limit)
+                              platform_name=platform_name, offset=offset, limit=limit,
+                              include_deleted=include_deleted)
 
 
 @router.get("/{task_id}", response_model=TaskRead)

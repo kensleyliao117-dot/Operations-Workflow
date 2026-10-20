@@ -176,6 +176,11 @@ def submit_for_review(db, content_id: int):
     if db.get(TaskWorkflow, task.id) is not None:
         from . import workflow as workflow_service
         state = workflow_service.get_workflow(db, task.id)
+        if state.status == "failed" and state.next_nodes == ["platform_rules"]:
+            # 已保存素材只恢复提示检查及人工审核，不重新生成文案或配图。
+            workflow = workflow_service.retry_workflow(db, task.id)
+            check = RuleCheckRead.model_validate(workflow.rule_check) if workflow.rule_check else None
+            return workflow.status, check, workflow
         action = "recheck" if state.content_id == content_id else "submit_changes"
         workflow = workflow_service.resume_workflow(db, task.id, WorkflowResumeRequest(action=action))
         check = RuleCheckRead.model_validate(workflow.rule_check) if workflow.rule_check else None

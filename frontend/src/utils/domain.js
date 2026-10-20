@@ -62,6 +62,13 @@ export function reviewSubmissionAction(task, content, latest, workflow, dirty = 
   )
     return null
   if (
+    workflow?.status === 'failed' &&
+    workflow.next_nodes?.length === 1 &&
+    workflow.next_nodes[0] === 'platform_rules' &&
+    ['running', 'pending_review'].includes(task.status)
+  )
+    return 'retry_review'
+  if (
     workflow &&
     (workflow.interrupt == null ||
       !['waiting_review', 'waiting_rule_changes', 'waiting_changes'].includes(workflow.status))

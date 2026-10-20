@@ -1,5 +1,6 @@
 """在两个真实 PostgreSQL 数据库的隔离 schema 中验证同步，不改业务数据。"""
 import os
+from contextlib import contextmanager
 import unittest
 from uuid import uuid4
 
@@ -15,7 +16,7 @@ from models.review import Review
 from models.task import Task
 from models.memory_sync import MemorySyncEvent
 from schemas.publish_record import PublishRequest, PublishResult
-from services import publish_record
+from services import publish_record, task as task_service
 import test_vector_store_postgres as pg_tests
 
 
@@ -56,3 +57,11 @@ class MemoryPostgresTest(unittest.TestCase):
         self.assertEqual(self.memory.scalar(select(func.count(PublishedPost.id))), 1)
         event = self.db.scalar(select(MemorySyncEvent).where(MemorySyncEvent.publish_record_id == published.id))
         self.assertEqual(event.status, "synced")
+        @contextmanager
+        def memory_factory():
+            yield self.memory
+        self.db.info['memory_session_factory'] = memory_factory
+        deleted_task_id = task.id
+        task_service.delete_task(self.db, deleted_task_id)
+        self.assertEqual(self.memory.scalar(select(func.count(PublishedPost.id))), 0)
+        self.assertIsNone(self.db.scalar(select(Task).where(Task.id == deleted_task_id)))

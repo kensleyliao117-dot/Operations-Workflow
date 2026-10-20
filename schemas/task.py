@@ -40,6 +40,7 @@ class TaskFailureSave(TaskCheckpointSave):
 
 
 class TaskRead(ResponseSchema):
+    is_deleted: bool = False
     id: int
     user_id: int
     product_id: int | None

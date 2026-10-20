@@ -69,6 +69,29 @@ test('cancelled tasks, old versions, interrupted reviews and unknown publication
     false,
   )
 })
+test('saved latest content can resume a failed rule stage without regenerating', () => {
+  const task = { status: 'running' },
+    content = { id: 3, version: 3 }
+  const workflow = {
+    status: 'failed',
+    interrupt: null,
+    next_nodes: ['platform_rules'],
+    content_id: 1,
+    content_version: 1,
+  }
+  assert.equal(reviewSubmissionAction(task, content, content, workflow), 'retry_review')
+  assert.equal(reviewSubmissionAction(task, content, content, workflow, true), 'retry_review')
+  assert.equal(
+    reviewSubmissionAction(task, content, content, {
+      ...workflow,
+      next_nodes: ['generate_images'],
+    }),
+    null,
+  )
+  assert.equal(reviewSubmissionAction({ status: 'cancelled' }, content, content, workflow), null)
+  assert.equal(reviewSubmissionAction(task, { id: 1, version: 1 }, content, workflow), null)
+})
+
 test('request keys survive refresh and are separated by user, version, account and visibility', () => {
   const data = new Map()
   globalThis.localStorage = {

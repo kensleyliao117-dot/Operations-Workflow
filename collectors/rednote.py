@@ -27,8 +27,17 @@ DETAIL_METADATA_SCRIPT = """(expectedId) => {
         .map(img => img.currentSrc || img.getAttribute('src') || img.getAttribute('data-src'))
         .filter(Boolean);
     const raw = {};
+    // 评论也使用 interactions / like-wrapper，必须先限定帖子自身的互动栏。
+    const commentSelector = '.comment-item, .parent-comment, .comment-container, .comments-container, .comments-el';
+    const bars = Array.from(root.querySelectorAll('.engage-bar, .interact-container, .interactions'))
+        .filter(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden'
+            && !node.closest(commentSelector));
+    const bar = bars.find(node => node.querySelector('.like-wrapper')
+        && (node.querySelector('.collect-wrapper') || node.querySelector('.chat-wrapper')));
     for (const [key, wrapper] of Object.entries({likes: 'like-wrapper', favorites: 'collect-wrapper', comments: 'chat-wrapper'})) {
-        const node = root.querySelector(`.interact-container .${wrapper} .count, .engage-bar .${wrapper} .count, .interactions .${wrapper} .count`);
+        const node = bar ? Array.from(bar.querySelectorAll(`.${wrapper} .count`))
+            .find(value => value.getClientRects().length && getComputedStyle(value).visibility !== 'hidden'
+                && !value.closest(commentSelector)) : null;
         raw[key] = node ? node.innerText.trim() : null;
     }
     const note = window.__INITIAL_STATE__?.note?.noteDetailMap?.[expectedId]?.note;

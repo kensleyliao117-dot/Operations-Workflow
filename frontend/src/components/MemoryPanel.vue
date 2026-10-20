@@ -13,6 +13,32 @@ import {
 import { userKey, readLocal, writeLocal } from '../utils/storage.js'
 import BaseDialog from './BaseDialog.vue'
 const props = defineProps({ record: Object, productId: Number })
+const emit = defineEmits(['deleted'])
+const deleteTarget = ref(null)
+const deleting = computed(() => busy.has('delete-feedback:' + props.record.id))
+function askDelete(kind, id) {
+  deleteTarget.value = { kind, id, recordId: props.record.id }
+}
+async function deleteFeedback() {
+  const target = deleteTarget.value
+  if (!target) return
+  await action('delete-feedback:' + target.recordId, async () => {
+    if (target.kind === 'all') await api.memory.remove(target.recordId)
+    else if (target.kind === 'metric') await api.memory.removeMetric(target.recordId, target.id)
+    else await api.memory.removeExperience(target.id)
+    if (closed) return
+    deleteTarget.value = null
+    evidence.value = null
+    experienceId.value = ''
+    await reload()
+    notify(
+      target.kind === 'all'
+        ? '该作品的反馈与经验已删除，发布记录和平台作品保留'
+        : '记录及相关派生经验已删除',
+    )
+    if (target.kind === 'all') emit('deleted')
+  })
+}
 const sync = ref(null),
   archive = ref(null),
   snapshots = ref([]),
@@ -170,17 +196,32 @@ onUnmounted(() => {
   <section class="panel memory-panel section-gap">
     <div class="panel-header">
       <h3>数据反馈与运营经验</h3>
-      <button class="button ghost small" @click="reload">刷新反馈</button>
+      <div class="row">
+        <button class="button ghost small" @click="reload">刷新反馈</button>
+        <button
+          class="button ghost small"
+          :disabled="deleting"
+          @click="askDelete('all', record.id)"
+        >
+          {{ sync?.status === 'deleting' ? '重试删除反馈' : '删除全部反馈' }}
+        </button>
+      </div>
     </div>
     <p v-if="error" class="error-text" role="alert">{{ error }}</p>
     <p class="muted small-text">
       经验库同步：{{
-        { synced: '已同步', pending: '待同步', failed: '同步失败' }[sync?.status] || '读取中'
+        {
+          synced: '已同步',
+          pending: '待同步',
+          failed: '同步失败',
+          deleting: '删除未完成，可重试',
+          deleted: '反馈已删除',
+        }[sync?.status] || '读取中'
       }}
     </p>
     <p v-if="sync?.error_message" class="error-text">{{ sync.error_message }}</p>
     <button
-      v-if="!archive"
+      v-if="!archive && sync?.status !== 'deleting'"
       class="button"
       :disabled="busy.has('sync-memory')"
       @click="
@@ -190,7 +231,7 @@ onUnmounted(() => {
         })
       "
     >
-      同步作品到经验库
+      {{ sync?.status === 'deleted' ? '重新启用反馈（不恢复已删除数据）' : '同步作品到经验库' }}
     </button>
     <template v-if="archive">
       <div class="metrics feedback-metrics">
@@ -215,9 +256,7 @@ onUnmounted(() => {
             :disabled="busy.has('metrics:' + record.id)"
           >
             <option value="rednote_creator">创作中心 · 当前账号后台</option>
-            <option value="rednote_public">
-              公开详情页 · 公开互动数据
-            </option>
+            <option value="rednote_public">公开详情页 · 公开互动数据</option>
           </select>
         </label>
         <button class="button" :disabled="busy.has('metrics:' + record.id)" @click="collect">
@@ -288,6 +327,14 @@ onUnmounted(() => {
             </span>
           </label>
           <span class="chip">{{ metricSources[snapshot.source] }}</span>
+          <button
+            class="button ghost small"
+            :aria-label="`删除观测 #${snapshot.id}`"
+            :disabled="deleting"
+            @click="askDelete('metric', snapshot.id)"
+          >
+            删除观测
+          </button>
         </div>
         <dl class="snapshot-values">
           <div v-for="[key, label] in metricFields" :key="key">
@@ -339,6 +386,13 @@ onUnmounted(() => {
           </label>
         </div>
         <span class="chip">{{ experience.is_active ? '可供检索' : '已停用' }}</span>
+        <button
+          class="button ghost small"
+          :disabled="deleting"
+          @click="askDelete('experience', experience.id)"
+        >
+          删除此经验
+        </button>
         <p class="preserve section-gap">{{ experience.result.summary }}</p>
         <article v-for="(lesson, index) in experience.result.lessons" :key="index" class="risk">
           <strong>
@@ -394,6 +448,28 @@ onUnmounted(() => {
       </p>
     </template>
   </section>
+  <BaseDialog
+    :open="!!deleteTarget"
+    title="确认删除反馈数据"
+    :busy="deleting"
+    @close="!deleting && (deleteTarget = null)"
+  >
+    <p v-if="deleteTarget?.kind === 'all'">
+      将彻底删除这篇作品的全部观测、分析和运营经验，并从反馈列表移除。发布记录与平台真实帖子保留，已删除数据无法恢复。
+    </p>
+    <p v-else-if="deleteTarget?.kind === 'metric'">
+      将删除这次观测，以及使用该观测生成的分析和经验，避免继续引用已删除证据。无法恢复。
+    </p>
+    <p v-else>
+      将删除当前经验版本及其分析记录，后续生成不再检索此经验。观测数据保留，删除后无法恢复。
+    </p>
+    <div class="row section-gap">
+      <button class="button" :disabled="deleting" @click="deleteTarget = null">取消</button>
+      <button class="button danger" :disabled="deleting" @click="deleteFeedback">
+        {{ deleting ? '删除中…' : '确认删除反馈' }}
+      </button>
+    </div>
+  </BaseDialog>
   <BaseDialog
     :open="confirmAnalysis"
     title="确认提炼运营经验"

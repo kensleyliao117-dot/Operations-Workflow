@@ -1,5 +1,6 @@
 """使用独立数据库检查采集快照的归属、去重和旧记录兼容。"""
 import unittest
+from dataclasses import replace
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -54,6 +55,17 @@ class RednotePersistenceTest(unittest.TestCase):
         self.assertNotEqual(first_id, second.id)
         self.assertEqual(second.user_id, 2)
         self.assertEqual(self.count(), 2)
+
+    def test_recollection_corrects_metrics_without_replacing_source_snapshot(self):
+        first = save_collected_case(self.db, replace(self.collected,
+            metrics={'likes': 3, 'favorites': 73, 'comments': 97}, metrics_raw={'likes': '3'}))
+        corrected = save_collected_case(self.db, replace(self.collected,
+            metrics={'likes': 133, 'favorites': 73, 'comments': 97}, metrics_raw={'likes': '133'}))
+        self.assertEqual(corrected.id, first.id)
+        self.assertEqual(corrected.metrics['likes'], 133)
+        self.assertEqual(corrected.metrics_raw['likes'], '133')
+        self.assertEqual(corrected.body, self.collected.body)
+        self.assertEqual(self.count(), 1)
 
     def test_legacy_case_missing_body_is_backfilled_without_changing_name(self):
         old = create_case(self.db, RednoteCaseCreate(name="原来的名称", link=self.collected.source_url))

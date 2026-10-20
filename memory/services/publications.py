@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.content import Content
@@ -14,7 +14,7 @@ from memory.models import PublishedPost
 from services.common import current_user_id, get_record, write_transaction
 from services.common import owned_query
 from services.validation import validate_pagination
-from services.exceptions import ConflictError, InvalidInputError, ServiceError
+from services.exceptions import ConflictError, InvalidInputError, ServiceError, NotFoundError
 from services.platform_account import require_account
 from .common import fingerprint, memory_transaction, owned
 
@@ -32,6 +32,8 @@ def queue_sync(db, record):
 
 def publication_source(db, record_id):
     record = get_record(db, PublishRecord, record_id)
+    if record.feedback_deleted:
+        raise NotFoundError('该作品的数据反馈已删除')
     if record.publish_status != "published":
         raise ConflictError("只有发布成功的作品可以进入运营经验库")
     # 发布记录已校验所属用户；历史归档保留软删除任务的产品与版本关联。
@@ -62,15 +64,24 @@ def publication_source(db, record_id):
     return values
 
 
-def sync_publication(db, memory_db, record_id):
+def sync_publication(db, memory_db, record_id, *, restore_deleted=False):
     with write_transaction(db):
         record = get_record(db, PublishRecord, record_id, lock=True)
+        if restore_deleted and record.feedback_deleted:
+            event = db.scalar(select(MemorySyncEvent).where(MemorySyncEvent.publish_record_id == record_id))
+            if event is not None and event.status == 'deleting':
+                raise ConflictError('反馈删除尚未完成，请先重试删除')
+            record.feedback_deleted = False
         values = publication_source(db, record_id)
         event = queue_sync(db, record)
         event.attempts = (event.attempts or 0) + 1
         db.flush()
         event_id = event.id
     try:
+        # 归档写入期间持有业务行锁，避免删除后又被在途同步重建。
+        get_record(db, Task, values['task_id'], lock=True)
+        get_record(db, PublishRecord, record_id, lock=True)
+        publication_source(db, record_id)
         with memory_transaction(memory_db):
             post = memory_db.scalar(owned(db, memory_db, PublishedPost).where(
                 PublishedPost.publish_record_id == record_id).with_for_update())
@@ -99,9 +110,12 @@ def sync_publication(db, memory_db, record_id):
         db.rollback()
         try:
             with write_transaction(db):
-                event = get_record(db, MemorySyncEvent, event_id, lock=True)
-                event.status = "failed"
-                event.error_message = str(exc) if isinstance(exc, ServiceError) else "经验库同步失败，发布结果已保留，可重新同步"
+                event = db.scalar(owned_query(db, MemorySyncEvent).where(MemorySyncEvent.id == event_id).with_for_update())
+                source = db.get(PublishRecord, record_id)
+                parent = db.get(Task, source.task_id) if source is not None else None
+                if event is not None and source is not None and parent is not None and not source.feedback_deleted and not parent.is_deleted:
+                    event.status = "failed"
+                    event.error_message = str(exc) if isinstance(exc, ServiceError) else "经验库同步失败，发布结果已保留，可重新同步"
         except SQLAlchemyError:
             db.rollback()
             logger.error("Cannot record memory sync failure")
@@ -136,7 +150,10 @@ def list_for_feedback(db, *, platform=None, product_id=None, offset=0, limit=20)
     query = owned_query(db, PublishRecord).add_columns(Product.id, Product.name, Content.title).join(
         Task, Task.id == PublishRecord.task_id).join(Product, Product.id == Task.product_id).join(
         Content, Content.id == PublishRecord.content_id).where(
-        PublishRecord.publish_status == "published", Product.user_id == current_user_id(db), Content.task_id == Task.id)
+        PublishRecord.publish_status == "published", or_(PublishRecord.feedback_deleted.is_(False),
+            select(MemorySyncEvent.id).where(MemorySyncEvent.publish_record_id == PublishRecord.id,
+                MemorySyncEvent.status == 'deleting').exists()),
+        Product.user_id == current_user_id(db), Content.task_id == Task.id)
     if platform is not None:
         query = query.where(PublishRecord.platform == platform)
     if product_id is not None:

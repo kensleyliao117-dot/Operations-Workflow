@@ -170,6 +170,26 @@ python -m workflows.setup
 
 ## 6. 启动后端和前端
 
+Windows 完成首次安装、配置和数据库初始化后，可以直接双击根目录脚本，无需打开编程软件：
+
+| 脚本 | 功能 |
+| --- | --- |
+| `start_all.cmd` | 同时启动前后端，准备就绪后打开前端网址 |
+| `start_backend.cmd` | 单独启动后端，优先使用项目 `.venv` 或 `venv` 中的 Python，否则使用 PATH 中的 Python |
+| `start_frontend.cmd` | 单独启动前端，使用已安装的 Node.js 和前端依赖 |
+| `start_chrome.cmd` | 需要采集或发布时，另行打开专用 Chrome |
+
+启动后保留前后端服务窗口。按 `Ctrl+C` 或关闭对应窗口停止服务。一键启动入口完成后会退出，服务窗口继续运行。重复启动时，已识别的服务会复用；端口被其他程序占用时会报错，不会强制关闭其他程序。
+
+脚本不负责安装软件、启动 PostgreSQL 服务或自动执行数据库迁移。缺少依赖或配置时，会保留错误信息；按本文先完成首次部署。单独检查环境可以在根目录执行 `start_all.cmd -CheckOnly`。指定安装路径可使用：
+
+```powershell
+.\start_backend.cmd -PythonPath "D:\Python\python.exe"
+.\start_frontend.cmd -NodePath "D:\Node\node.exe"
+```
+
+macOS / Linux，或需要手动运行时，使用以下命令。
+
 终端 A：项目根目录，激活 Python 虚拟环境后运行：
 
 ```sh

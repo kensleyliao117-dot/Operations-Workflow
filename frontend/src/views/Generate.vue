@@ -59,11 +59,15 @@ async function deleteTask() {
   const item = deleteTarget.value
   if (!item) return
   await action(`delete-task:${item.id}`, async () => {
-    await api.tasks.remove(item.id)
-    tasks.value = tasks.value.filter((row) => row.id !== item.id)
-    deleteTarget.value = null
-    if (task.value?.id === item.id || Number(route.query.task_id) === item.id) await newTask()
-    notify('任务已删除，关联内容和发布记录保留')
+    try {
+      await api.tasks.remove(item.id)
+      tasks.value = tasks.value.filter((row) => row.id !== item.id)
+      deleteTarget.value = null
+      if (task.value?.id === item.id || Number(route.query.task_id) === item.id) await newTask()
+      notify('任务及其关联内容、图片、审核、发布和反馈记录已彻底删除')
+    } finally {
+      await loadTasks()
+    }
   })
 }
 const filteredTasks = computed(() =>
@@ -98,7 +102,7 @@ async function loadPrompts() {
 }
 async function loadTasks() {
   const platform = selectedPlatform.value
-  const rows = await allPages(api.tasks.list, { platform_name: platform })
+  const rows = await allPages(api.tasks.list, { platform_name: platform, include_deleted: true })
   if (platform === selectedPlatform.value) tasks.value = rows
 }
 async function chooseTask(id) {
@@ -283,6 +287,7 @@ onMounted(async () => {
             class="list-item"
             style="flex: 1; min-width: 0"
             :class="{ active: item.id === task?.id }"
+            :disabled="item.is_deleted"
             @click="openTask(item)"
           >
             <strong>#{{ item.id }} {{ item.input_text.slice(0, 28) }}</strong>
@@ -290,7 +295,8 @@ onMounted(async () => {
               {{ products.find((p) => p.id === item.product_id)?.name || '产品' }} ·
               {{ displayDate(item.created_at) }}
             </p>
-            <StatusBadge :status="item.status" />
+            <span v-if="item.is_deleted" class="chip">已移除 · 可继续彻底删除</span>
+            <StatusBadge v-else :status="item.status" />
           </button>
           <button
             class="button ghost small"
@@ -315,7 +321,7 @@ onMounted(async () => {
     <p>
       确认删除任务 #{{
         deleteTarget?.id
-      }}？任务将从列表移除，关联的内容版本、审核、发布及反馈记录保留。
+      }}？将彻底删除所有内容版本、生成图片、审核、发布记录、工作流进度及关联反馈与经验，无法恢复。产品资料和共用案例、Prompt、模型配置保留。不会删除小红书平台上的真实帖子。
     </p>
     <div class="row section-gap">
       <button class="button" :disabled="deleteBusy" @click="deleteTarget = null">取消</button>
