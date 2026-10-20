@@ -67,6 +67,7 @@ export const api = {
     list: (values) => get('/tasks', values),
     get: (id) => get(`/tasks/${id}`),
     create: (data) => post('/tasks', data),
+    remove: (id) => request(`/tasks/${id}`, { method: 'DELETE' }),
     status: (id, status) => patch(`/tasks/${id}/status`, { status }),
   },
   workflow: {

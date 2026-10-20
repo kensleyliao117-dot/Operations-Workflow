@@ -36,6 +36,11 @@ def get_task(task_id: Annotated[int, Path(gt=0)], db: Database):
     return service.get_task(db, task_id)
 
 
+@router.delete("/{task_id}", status_code=204)
+def delete_task(task_id: Annotated[int, Path(gt=0)], db: Database):
+    service.delete_task(db, task_id)
+
+
 @router.patch("/{task_id}/status", response_model=TaskRead)
 def update_task_status(task_id: Annotated[int, Path(gt=0)], data: TaskStatusUpdate, db: Database):
     return service.update_task_status(db, task_id, data)

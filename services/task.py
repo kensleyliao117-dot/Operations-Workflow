@@ -8,6 +8,7 @@ from .exceptions import ConflictError, InvalidInputError, InvalidTransitionError
 from .user import get_user
 from .validation import validate_id, validate_pagination
 from .common import current_user_id, get_record, owned_query
+from .common import write_transaction
 from models.product import Product
 
 
@@ -140,6 +141,28 @@ def _lock_task(db: Session, task_id: int) -> Task:
     if task is None:
         raise NotFoundError(f"任务 {task_id} 不存在")
     return task
+
+
+def delete_task(db: Session, task_id: int) -> None:
+    """软删除所属任务；执行中的生成及发布必须先结束。"""
+    from models.publish_record import PublishRecord
+    from models.workflow import TaskWorkflow
+    from .image_generation import generation_in_progress
+
+    with write_transaction(db):
+        task = _lock_task(db, task_id)
+        workflow = db.get(TaskWorkflow, task_id)
+        publishing = db.scalar(select(PublishRecord.id).where(
+            PublishRecord.task_id == task_id,
+            PublishRecord.publish_status.in_(["publishing", "unknown"]),
+        ).limit(1))
+        if (task.status in {"running", "publishing"}
+                or (workflow is not None and workflow.status == "running")
+                or generation_in_progress(task)
+                or (task.checkpoint or {}).get("content_generation", {}).get("status") == "running"
+                or publishing is not None):
+            raise ConflictError("任务正在生成或发布，或发布结果待核实，请处理完成后再删除")
+        task.is_deleted = True
 
 
 def save_task_checkpoint(db: Session, task_id: int, data: TaskCheckpointSave) -> Task:

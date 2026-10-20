@@ -34,7 +34,8 @@ def publication_source(db, record_id):
     record = get_record(db, PublishRecord, record_id)
     if record.publish_status != "published":
         raise ConflictError("只有发布成功的作品可以进入运营经验库")
-    task = get_record(db, Task, record.task_id)
+    # 发布记录已校验所属用户；历史归档保留软删除任务的产品与版本关联。
+    task = record.task
     if not task.product_id:
         raise InvalidInputError("发布任务未关联产品，不能积累该产品的运营经验")
     product = get_record(db, Product, task.product_id)

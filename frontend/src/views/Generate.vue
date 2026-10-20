@@ -47,6 +47,24 @@ const form = reactive({
   image_model_id: saved?.image_model_id || null,
 })
 const latest = computed(() => contents.value[0])
+const deleteTarget = ref(null)
+const deleteBusy = computed(
+  () => deleteTarget.value && busy.has(`delete-task:${deleteTarget.value.id}`),
+)
+function deletionBlocked(item) {
+  return ['running', 'publishing'].includes(item.status) || busy.has(`workflow:${item.id}`)
+}
+async function deleteTask() {
+  const item = deleteTarget.value
+  if (!item) return
+  await action(`delete-task:${item.id}`, async () => {
+    await api.tasks.remove(item.id)
+    tasks.value = tasks.value.filter((row) => row.id !== item.id)
+    deleteTarget.value = null
+    if (task.value?.id === item.id || Number(route.query.task_id) === item.id) await newTask()
+    notify('任务已删除，关联内容和发布记录保留')
+  })
+}
 const filteredTasks = computed(() =>
   tasks.value.filter((t) =>
     `${t.id} ${t.input_text}`.toLowerCase().includes(search.value.toLowerCase()),
@@ -259,23 +277,51 @@ onMounted(async () => {
       </div>
       <input v-model="search" placeholder="搜索任务" aria-label="搜索任务" class="search" />
       <div class="list scroll-list">
-        <button
-          v-for="item in filteredTasks"
-          :key="item.id"
-          class="list-item"
-          :class="{ active: item.id === task?.id }"
-          @click="openTask(item)"
-        >
-          <strong>#{{ item.id }} {{ item.input_text.slice(0, 28) }}</strong>
-          <p>
-            {{ products.find((p) => p.id === item.product_id)?.name || '产品' }} ·
-            {{ displayDate(item.created_at) }}
-          </p>
-          <StatusBadge :status="item.status" />
-        </button>
+        <div v-for="item in filteredTasks" :key="item.id" class="row">
+          <button
+            class="list-item"
+            style="flex: 1; min-width: 0"
+            :class="{ active: item.id === task?.id }"
+            @click="openTask(item)"
+          >
+            <strong>#{{ item.id }} {{ item.input_text.slice(0, 28) }}</strong>
+            <p>
+              {{ products.find((p) => p.id === item.product_id)?.name || '产品' }} ·
+              {{ displayDate(item.created_at) }}
+            </p>
+            <StatusBadge :status="item.status" />
+          </button>
+          <button
+            class="button ghost small"
+            :aria-label="`删除任务 #${item.id}`"
+            :disabled="deletionBlocked(item)"
+            :title="deletionBlocked(item) ? '生成或发布完成后可删除' : '删除任务'"
+            @click="deleteTarget = item"
+          >
+            删除
+          </button>
+        </div>
       </div>
       <p v-if="!tasks.length" class="muted">尚无任务，先填写运营需求。</p>
     </section>
+  </BaseDialog>
+  <BaseDialog
+    :open="!!deleteTarget"
+    title="删除任务"
+    :busy="!!deleteBusy"
+    @close="!deleteBusy && (deleteTarget = null)"
+  >
+    <p>
+      确认删除任务 #{{
+        deleteTarget?.id
+      }}？任务将从列表移除，关联的内容版本、审核、发布及反馈记录保留。
+    </p>
+    <div class="row section-gap">
+      <button class="button" :disabled="deleteBusy" @click="deleteTarget = null">取消</button>
+      <button class="button danger" :disabled="deleteBusy" @click="deleteTask">
+        {{ deleteBusy ? '删除中…' : '确认删除' }}
+      </button>
+    </div>
   </BaseDialog>
   <div class="generation-workspace section-gap">
     <div class="stack">

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, ForeignKey, Text, DateTime, func, JSON
+from sqlalchemy import String, ForeignKey, Text, DateTime, func, JSON, Boolean, false
 from sqlalchemy.orm import Mapped, mapped_column,relationship
 from database import Base
 
@@ -23,6 +23,8 @@ class Task(Base):
     task_type:Mapped[str]=mapped_column(String(100))
     input_text:Mapped[str]=mapped_column(Text)
     status:Mapped[str]=mapped_column(String(100))
+    # 仅从任务入口隐藏，关联内容、审核和发布数据保留。
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # checkpoint 只保存可 JSON 序列化的进度，例如 content_id、当前步骤。
     checkpoint: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     failed_from_status: Mapped[str | None] = mapped_column(String(100), nullable=True)

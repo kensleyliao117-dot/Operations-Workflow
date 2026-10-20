@@ -156,6 +156,9 @@ class ContractAPI:
             elif path == "/tasks" and method == "POST":
                 TaskCreate.model_validate(data); assert "user_id" not in data
                 self.task.update(data); self.created = True; status, result = 201, self.task
+            elif path == "/tasks/31" and method == 'DELETE':
+                self.created = False
+                status, result = 204, None
             elif path == "/tasks/31": result = self.task
             elif path == "/tasks/31/workflow" and not self.started: status, result = 404, {"detail": "尚未启动工作流"}
             elif path == "/tasks/31/workflow": result = self.workflow()
@@ -307,6 +310,24 @@ class FrontendBrowserTest(unittest.TestCase):
         expect(self.page.locator(".topbar")).to_contain_text("ui_operator")
 
     def calls(self, method, path): return [c for c in self.fixture.calls if c[:2] == (method, path)]
+
+    def test_task_deletion_requires_confirmation_and_clears_current_selection(self):
+        self.fixture.created = True
+        self.login('/generate?task_id=31')
+        p = self.page
+        p.get_by_role('button', name='任务历史', exact=True).click()
+        p.get_by_role('button', name='删除任务 #31', exact=True).click()
+        dialog = p.get_by_role('dialog', name='删除任务', exact=True)
+        dialog.get_by_role('button', name='取消', exact=True).click()
+        self.assertEqual(len(self.calls('DELETE', '/tasks/31')), 0)
+        p.get_by_role('button', name='删除任务 #31', exact=True).click()
+        dialog.get_by_role('button', name='确认删除', exact=True).click()
+        expect(p.get_by_role('button', name='创建任务', exact=True)).to_be_visible()
+        self.assertEqual(len(self.calls('DELETE', '/tasks/31')), 1)
+        p.get_by_role('button', name='任务历史', exact=True).click()
+        expect(p.get_by_role('button', name='删除任务 #31', exact=True)).to_have_count(0)
+        p.reload()
+        expect(p.get_by_role('button', name='创建任务', exact=True)).to_be_visible()
 
     def test_single_main_area_navigation_restores_original_palette_and_sidebar_preference(self):
         p = self.page; self.login('/products')
