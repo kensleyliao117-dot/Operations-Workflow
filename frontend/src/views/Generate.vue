@@ -18,6 +18,7 @@ import BaseDialog from '../components/BaseDialog.vue'
 import ImageModelFields from '../components/ImageModelFields.vue'
 import { selectedPlatform, currentPlatform, selectPlatform } from '../stores/platforms.js'
 import { analysisModels, loadModels } from '../stores/models.js'
+import { defaultImageSize } from '../utils/image_sizes.js'
 const route = useRoute(),
   router = useRouter(),
   tracking = useTask()
@@ -43,7 +44,7 @@ const form = reactive({
   output_mode: saved?.output_mode || 'text',
   image_style_requirement: saved?.image_style_requirement || '',
   image_count: saved?.image_count || 1,
-  image_size: saved?.image_size || '1728*2368',
+  image_size: saved?.image_size || defaultImageSize,
   image_model_id: saved?.image_model_id || null,
 })
 const latest = computed(() => contents.value[0])
@@ -194,7 +195,7 @@ watch(selectedPlatform, async () => {
       output_mode: saved?.output_mode || 'text',
       image_style_requirement: saved?.image_style_requirement || '',
       image_count: saved?.image_count || 1,
-      image_size: saved?.image_size || '1728*2368',
+      image_size: saved?.image_size || defaultImageSize,
       image_model_id: saved?.image_model_id || null,
     })
   }

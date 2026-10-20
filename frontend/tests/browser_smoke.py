@@ -637,7 +637,7 @@ class FrontendBrowserTest(unittest.TestCase):
         p.get_by_role('link', name='内容创作', exact=True).click()
         p.get_by_label('生成内容', exact=True).select_option('images')
         expect(p.get_by_label('生图模型', exact=True).locator('option')).to_contain_text(['使用账号默认生图模型', '配图连接'])
-        expect(p.get_by_label('图片尺寸', exact=True)).to_have_value('1024*1024')
+        expect(p.get_by_label('图片比例', exact=True)).to_have_value('1024*1024')
         p.get_by_label('生图模型', exact=True).select_option('101')
         self.fixture.resource_models = []
         p.reload()
@@ -690,6 +690,33 @@ class FrontendBrowserTest(unittest.TestCase):
         p.get_by_role("dialog").get_by_role("button", name="确认删除", exact=True).click()
         expect(p.get_by_role("heading", name="暂无产品", exact=True)).to_be_visible()
         self.assertEqual(len(self.calls("DELETE", "/products/11")), 1)
+
+    def test_image_ratios_are_exact_and_sent_to_workflow_and_review(self):
+        p = self.page; self.login('/generate')
+        p.get_by_label('选择产品', exact=True).select_option('11')
+        p.get_by_label('本次运营需求').fill('生成产品配图')
+        p.get_by_label('生成内容', exact=True).select_option('images')
+        select = p.get_by_label('图片比例', exact=True)
+        expect(select.locator('option')).to_have_text(['1:1', '3:4', '4:3', '16:9', '9:16'])
+        self.assertEqual(select.get_attribute('translate'), 'no')
+        for ratio, size in [('1:1', '2048*2048'), ('3:4', '1536*2048'), ('4:3', '2048*1536'),
+                            ('16:9', '2048*1152'), ('9:16', '1152*2048')]:
+            select.select_option(label=ratio)
+            expect(select).to_have_value(size)
+            expect(p.get_by_text(size.replace('*', ' × ') + ' px', exact=True)).to_be_visible()
+        p.get_by_role('button', name='创建任务', exact=True).click()
+        p.get_by_role('button', name='启动图片生成', exact=True).click()
+        expect(p.get_by_role('link', name='前往审核 →')).to_be_visible()
+        self.assertEqual(self.calls('POST', '/tasks/31/workflow/start')[-1][2]['image_size'], '1152*2048')
+        p.get_by_role('link', name='前往审核 →').click()
+        p.get_by_text('生成 / 重新生成配图', exact=True).click()
+        select = p.get_by_label('图片比例', exact=True)
+        expect(select.locator('option')).to_have_text(['1:1', '3:4', '4:3', '16:9', '9:16'])
+        select.select_option(label='16:9')
+        p.get_by_role('button', name='生成配图', exact=True).click()
+        with p.expect_response(API + '/contents/42/images/generate'):
+            p.get_by_role('dialog', name='确认生成配图').get_by_role('button', name='确认生图').click()
+        self.assertEqual(self.calls('POST', '/contents/42/images/generate')[-1][2]['size'], '2048*1152')
 
     def test_complete_workflow_and_publication_confirmation(self):
         p = self.page; self.login()

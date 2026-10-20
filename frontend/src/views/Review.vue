@@ -20,6 +20,7 @@ import EmptyState from '../components/EmptyState.vue'
 import AuthImage from '../components/AuthImage.vue'
 import BaseDialog from '../components/BaseDialog.vue'
 import ImageModelFields from '../components/ImageModelFields.vue'
+import { defaultImageSize } from '../utils/image_sizes.js'
 import { platformAdapters } from '../config/platform_adapters.js'
 import { selectedPlatform, currentPlatform, selectPlatform } from '../stores/platforms.js'
 const route = useRoute(),
@@ -65,7 +66,7 @@ const draft = reactive({ title: '', body: '', tags: '' }),
   imageForm = reactive({
     style_requirement: '',
     count: 1,
-    size: '1728*2368',
+    size: defaultImageSize,
     replace_existing: false,
     image_model_id: null,
   })

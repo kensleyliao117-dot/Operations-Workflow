@@ -51,7 +51,7 @@ class ImageClientTest(unittest.TestCase):
             self.assertEqual(request.headers["Authorization"], "Bearer image-key")
             body = json.loads(request.content)
             self.assertEqual(body["model"], "qwen-image-2.0")
-            self.assertEqual(body["parameters"]["size"], "1728*2368")
+            self.assertEqual(body["parameters"]["size"], "1536*2048")
             self.assertFalse(body["parameters"]["prompt_extend"])
             self.assertTrue(body["parameters"]["watermark"])
             self.assertEqual(body["input"]["messages"][0]["content"], [{"text": "A scene"}])
@@ -60,6 +60,28 @@ class ImageClientTest(unittest.TestCase):
         result = self.client(handler).generate("A scene", "No claims")
         self.assertEqual(result.urls, (URL,))
         self.assertEqual(result.request_id, "request-1")
+
+    def test_five_exact_ratios_reach_provider_without_dimension_changes(self):
+        from integrations.llm.image_sizes import ASPECT_RATIO_SIZES
+        from schemas.image_generation import ImageGenerationRequest
+        from schemas.workflow import WorkflowGenerationRequest
+        sizes = []
+        def handler(request):
+            sizes.append(json.loads(request.content)['parameters']['size'])
+            return httpx.Response(200, json={'output': {'choices': [
+                {'message': {'content': [{'image': URL}]}}]}})
+        client = self.client(handler)
+        for ratio, size in ASPECT_RATIO_SIZES.items():
+            with self.subTest(ratio=ratio):
+                width, height = map(int, size.split('*'))
+                rw, rh = map(int, ratio.split(':'))
+                self.assertEqual(width * rh, height * rw)
+                self.assertEqual(width % 16, 0)
+                self.assertEqual(height % 16, 0)
+                self.assertEqual(ImageGenerationRequest(size=size).size, size)
+                self.assertEqual(WorkflowGenerationRequest(image_size=size).image_size, size)
+                client.generate('Scene', 'No claims', size=size)
+                self.assertEqual(sizes[-1], size)
 
     def test_timeout_errors_and_empty_or_partial_responses_are_sanitized(self):
         def timeout(request):
@@ -192,6 +214,16 @@ class ImageAPITest(unittest.TestCase):
         self.post("/publish-records", {"task_id": self.task_id, "content_id": new["id"],
                   "platform": "rednote", "account_id": self.account_id}, 409)
         self.review(self.task_id, new["id"])
+
+    def test_each_ratio_is_saved_and_forwarded_to_image_generation_and_download(self):
+        from integrations.llm.image_sizes import ASPECT_RATIO_SIZES
+        content_id = self.content_id
+        for size in ASPECT_RATIO_SIZES.values():
+            result = self.post(f'/contents/{content_id}/images/generate', {'size': size, 'replace_existing': True})
+            self.assertEqual(self.image.generate.call_args.kwargs['size'], size)
+            self.assertEqual(self.image.download.call_args.kwargs['size'], size)
+            content_id = result['content']['id']
+            self.assertEqual(result['content']['generation_metadata']['image_generation']['size'], size)
 
     def test_regenerate_appends_or_replaces_without_changing_old_assets(self):
         first = self.post(self.endpoint, {})

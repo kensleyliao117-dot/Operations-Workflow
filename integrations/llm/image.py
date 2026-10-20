@@ -10,11 +10,12 @@ from PIL import Image, UnidentifiedImageError
 
 import config
 from services.exceptions import InvalidInputError, ServiceUnavailableError
+from .image_sizes import QWEN_IMAGE_SIZES
 
 
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_PIXELS = 2048 * 2048
-SIZES = {"1728*2368", "2048*2048", "1536*2688"}
+SIZES = QWEN_IMAGE_SIZES
 MODELS = {"qwen-image-2.0", "qwen-image-2.0-pro", "qwen-image-2.0-2026-03-03",
           "qwen-image-2.0-pro-2026-03-03", "qwen-image-2.0-pro-2026-04-22", "qwen-image-2.0-pro-2026-06-22"}
 
@@ -97,7 +98,7 @@ class QwenImageClient:
         if self._owns_client:
             self._client.close()
 
-    def generate(self, prompt: str, negative_prompt: str, *, count: int = 1, size: str = "1728*2368") -> ImageResult:
+    def generate(self, prompt: str, negative_prompt: str, *, count: int = 1, size: str = "1536*2048") -> ImageResult:
         if (not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 600 or "\x00" in prompt
                 or not isinstance(negative_prompt, str) or not negative_prompt.strip() or len(negative_prompt) > 500
                 or type(count) is not int or not 1 <= count <= 4 or size not in SIZES):

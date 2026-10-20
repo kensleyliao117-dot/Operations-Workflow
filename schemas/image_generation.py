@@ -21,7 +21,7 @@ class ImageGenerationRequest(RequestSchema):
 
     style_requirement: str = Field(default="", max_length=1000)
     count: int = Field(default=1, ge=1, le=4)
-    size: ImageSize = "1728*2368"
+    size: ImageSize = "1536*2048"
     # 替换仅影响新版本，历史版本的图片始终保留。
     replace_existing: bool = False
     model_id: Name100 | None = None

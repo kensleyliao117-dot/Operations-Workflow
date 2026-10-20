@@ -190,7 +190,9 @@ onUnmounted(() => {
         v-model="form.protocol"
         @change="
           form.sizes =
-            form.protocol === 'qwen_image' ? '1728*2368, 2048*2048, 1536*2688' : '1024*1024'
+            form.protocol === 'qwen_image'
+              ? '2048*2048, 1536*2048, 2048*1536, 2048*1152, 1152*2048'
+              : '1024*1024'
         "
       >
         <option value="compatible">Images 兼容接口</option>
@@ -268,8 +270,8 @@ onUnmounted(() => {
         placeholder="1024*1024, 1024*1536"
       />
       <small class="muted">
-        用逗号分隔。可选
-        1024*1024、1024*1536、1536*1024、1024*1792、1792*1024，以及现有千问尺寸；请以供应商支持范围为准。
+        填写宽*高，用逗号分隔，单位为 px。常用比例对应：1:1 → 2048*2048、3:4 → 1536*2048、4:3 →
+        2048*1536、16:9 → 2048*1152、9:16 → 1152*2048；请只填写供应商实际支持的尺寸。
       </small>
     </label>
     <label class="check-row">

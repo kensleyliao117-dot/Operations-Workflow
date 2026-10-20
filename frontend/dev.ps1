@@ -28,7 +28,7 @@ try {
             if (-not (Test-Path -LiteralPath $corepack)) { throw 'npm was not found. Install npm with Node.js.' }
             & $nodePath $corepack ci --no-audit --no-fund
         }
-    } elseif ($Action -eq 'test') { & $nodePath --test tests/client.test.js tests/domain.test.js }
+    } elseif ($Action -eq 'test') { & $nodePath --test tests/client.test.js tests/domain.test.js tests/image_sizes.test.js }
     else {
         $vite = Join-Path $PSScriptRoot 'node_modules\vite\bin\vite.js'
         if (-not (Test-Path -LiteralPath $vite)) { throw 'Dependencies are missing. Run .\dev.ps1 install first.' }

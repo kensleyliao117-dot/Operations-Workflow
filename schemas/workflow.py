@@ -15,7 +15,7 @@ class WorkflowGenerationRequest(TaskContentGenerationRequest):
     output_mode: Literal["text", "images", "text_images"] = "text"
     image_style_requirement: str = Field(default="", max_length=1000)
     image_count: int = Field(default=1, ge=1, le=4)
-    image_size: ImageSize = "1728*2368"
+    image_size: ImageSize = "1536*2048"
     image_model_id: PositiveId | None = None
 
     def text_options(self):

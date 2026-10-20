@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api/index.js'
 import { action } from '../stores/ui.js'
+import { imageRatioOptions, normalizeImageSize } from '../utils/image_sizes.js'
 const props = defineProps({ modelValue: [String, Number], size: String, disabled: Boolean })
 const emit = defineEmits(['update:modelValue', 'update:size'])
 const models = ref([])
@@ -10,10 +11,17 @@ const selected = computed(() =>
     ? models.value.find((row) => row.id === Number(props.modelValue))
     : models.value.find((row) => row.is_default),
 )
-const sizes = computed(() => selected.value?.image_sizes || ['1728*2368', '2048*2048', '1536*2688'])
-watch(sizes, (values) => {
-  if (values.length && !values.includes(props.size)) emit('update:size', values[0])
-})
+const ratios = computed(() => imageRatioOptions(selected.value))
+const available = computed(() => ratios.value.some((option) => !option.disabled))
+const dimensions = computed(() => (available.value ? props.size?.replace('*', ' × ') : ''))
+watch(
+  [ratios, () => props.size],
+  ([values, size]) => {
+    const normalized = normalizeImageSize(size, values)
+    if (normalized !== size) emit('update:size', normalized)
+  },
+  { immediate: true },
+)
 onMounted(() =>
   action('image-models-load', async () => {
     models.value = (await api.resourceModels.list('image')).filter((row) => row.is_active)
@@ -38,16 +46,29 @@ onMounted(() =>
     </select>
   </label>
   <label class="field">
-    <span class="field-label">图片尺寸</span>
+    <span class="field-label">图片比例</span>
     <select
       :value="size"
-      :disabled="disabled"
-      aria-label="图片尺寸"
+      :disabled="disabled || !available"
+      aria-label="图片比例"
+      translate="no"
+      class="notranslate"
+      required
       @change="emit('update:size', $event.target.value)"
     >
-      <option v-for="value in sizes" :key="value" :value="value">
-        {{ value.replace('*', ' × ') }}
+      <option
+        v-for="option in ratios"
+        :key="option.ratio"
+        :value="option.size"
+        :disabled="option.disabled"
+        translate="no"
+      >
+        {{ option.ratio }}
       </option>
     </select>
+    <small v-if="dimensions" class="muted notranslate" translate="no">{{ dimensions }} px</small>
+    <small v-if="selected && !available" class="muted">
+      所选模型未配置这些比例，请在模型连接中补充支持的尺寸或更换模型。
+    </small>
   </label>
 </template>

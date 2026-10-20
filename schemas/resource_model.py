@@ -3,11 +3,14 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints, field_validator, model_validator
 from .analysis_model import AnalysisModelWrite
 from .base import Name100, ResponseSchema
+from integrations.llm.image_sizes import QWEN_IMAGE_SIZES
 
 IMAGE_SIZES = {'1728*2368', '2048*2048', '1536*2688', '1024*1024', '1024*1536',
-               '1536*1024', '1024*1792', '1792*1024'}
+               '1536*1024', '1024*1792', '1792*1024', '1536*2048', '2048*1536',
+               '2048*1152', '1152*2048'}
 ImageSize = Literal['1728*2368', '2048*2048', '1536*2688', '1024*1024', '1024*1536',
-                    '1536*1024', '1024*1792', '1792*1024']
+                    '1536*1024', '1024*1792', '1792*1024', '1536*2048', '2048*1536',
+                    '2048*1152', '1152*2048']
 
 
 class ResourceModelWrite(AnalysisModelWrite):
@@ -35,7 +38,7 @@ class ResourceModelWrite(AnalysisModelWrite):
                 raise ValueError('生图连接不接受向量维度')
             if not self.image_sizes or any(size not in IMAGE_SIZES for size in self.image_sizes):
                 raise ValueError('请填写模型支持的图片尺寸')
-            if self.protocol == 'qwen_image' and any(size not in {'1728*2368', '2048*2048', '1536*2688'} for size in self.image_sizes):
+            if self.protocol == 'qwen_image' and any(size not in QWEN_IMAGE_SIZES for size in self.image_sizes):
                 raise ValueError('千问同步接口请选择支持的千问图片尺寸')
         if any(self.base_url.endswith(suffix) for suffix in ('/embeddings', '/images/generations', '/generation')):
             raise ValueError('填写接口根地址，不包含具体调用路径')
