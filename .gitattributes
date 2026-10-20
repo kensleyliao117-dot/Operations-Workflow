@@ -1,0 +1,3 @@
+# Windows command launchers require CRLF when opened by Explorer.
+*.cmd text eol=crlf
+*.bat text eol=crlf

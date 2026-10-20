@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ChromePath = '',
     [ValidateRange(0, 65535)][int]$Port = 0,
     [switch]$CheckOnly
@@ -12,6 +12,7 @@ function Get-CdpVersion([int]$DebugPort) {
         $request = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$DebugPort/json/version")
         $request.Proxy = $null
         $request.Timeout = 1500
+        $request.ReadWriteTimeout = 1500
         $response = $request.GetResponse()
         try {
             $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
@@ -21,6 +22,7 @@ function Get-CdpVersion([int]$DebugPort) {
 }
 
 try {
+    Write-Host 'Checking Chrome remote debugging...'
     if (-not $Port) {
         $endpoint = $env:CHROME_CDP_URL
         $envPath = Join-Path $projectRoot '.env'
@@ -38,11 +40,13 @@ try {
         } else { $Port = 9222 }
     }
     $version = Get-CdpVersion $Port
-    if ($version -and $version.webSocketDebuggerUrl) {
-        Write-Output "Chrome CDP is already available at http://127.0.0.1:$Port"
-        exit 0
+    if ($CheckOnly) {
+        if ($version -and $version.webSocketDebuggerUrl) {
+            Write-Output "Chrome CDP is available at http://127.0.0.1:$Port"
+            exit 0
+        }
+        throw "Chrome CDP is unavailable at http://127.0.0.1:$Port"
     }
-    if ($CheckOnly) { throw "Chrome CDP is unavailable at http://127.0.0.1:$Port" }
     if (-not $ChromePath) {
         $candidates = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) |
             Where-Object { $_ } | ForEach-Object { Join-Path $_ 'Google\Chrome\Application\chrome.exe' }
@@ -56,10 +60,12 @@ try {
         throw 'Chrome was not found. Run start_chrome.cmd -ChromePath "D:\path\chrome.exe".'
     }
     $arguments = @('--remote-debugging-address=127.0.0.1', "--remote-debugging-port=$Port",
-        ('--user-data-dir="' + $profilePath + '"'), 'https://www.xiaohongshu.com')
+        ('--user-data-dir="' + $profilePath + '"'), '--new-window', 'https://www.xiaohongshu.com')
     # 交互窗口用于登录及处理平台验证，不关闭已有浏览器。
+    Write-Host 'Opening a dedicated Chrome window...'
     Start-Process -FilePath $ChromePath -ArgumentList $arguments -WindowStyle Normal
-    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+    $startupTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($startupTimer.Elapsed.TotalSeconds -lt 20) {
         Start-Sleep -Milliseconds 500
         $version = Get-CdpVersion $Port
         if ($version -and $version.webSocketDebuggerUrl) {
@@ -68,6 +74,7 @@ try {
             Write-Output 'Log in to the platform in this window and keep it open during collection or publishing.'
             exit 0
         }
+        Write-Host 'Waiting for Chrome CDP...'
     }
     throw 'CDP did not start. Close the project Chrome window and run this script again. No browser was force-closed.'
 } catch {

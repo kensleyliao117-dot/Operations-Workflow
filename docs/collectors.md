@@ -22,7 +22,7 @@ python run_local.py
 ```
 
 在该窗口手工登录小红书。独立用户目录保留登录状态、缓存和历史记录，属于本机运行数据。
-脚本自动查找 Chrome，读取 `CHROME_CDP_URL` 的本机端口；目录基于脚本所在位置，不依赖终端工作目录。已有可用 CDP 时直接复用。自定义安装位置可运行 `start_chrome.cmd -ChromePath "D:\Apps\Chrome\chrome.exe"`；仅检查连接使用 `start_chrome.cmd -CheckOnly`。脚本不安装程序，不修改系统执行策略，不强行关闭已有 Chrome；PowerShell 启动参数只对该次脚本进程生效。
+脚本自动查找 Chrome，读取 `CHROME_CDP_URL` 的本机端口；目录基于脚本所在位置，不依赖终端工作目录。双击后显示启动进度，并打开专用 Chrome 新窗口；已有调试会话时复用同一用户目录和登录状态。自定义安装位置可运行 `start_chrome.cmd -ChromePath "D:\Apps\Chrome\chrome.exe"`；仅检查连接使用 `start_chrome.cmd -CheckOnly`，不会打开窗口。启动后最多等待约 20 秒检查调试连接，失败时保留错误提示。脚本不安装程序，不修改系统执行策略，不强行关闭已有 Chrome；PowerShell 启动参数只对该次脚本进程生效。
 `storage/` 已被 `.gitignore` 忽略，不能手工上传或强制添加浏览器目录。
 Chrome 的独立目录要求见 [官方说明](https://developer.chrome.com/blog/remote-debugging-port)。
 
